@@ -163,23 +163,25 @@ class OpStudent(models.Model):
         # Prepare user data in bulk
         user_values_list = []
         for record in records_without_user:
-            user_values_list.append({
-                'name': record.name,
-                'partner_id': record.partner_id.id,
-                'login': record.email if record.email else record.gr_no,
-                'groups_id': [(6, 0, [user_group.id])] if user_group else [],
-                'is_student': True,
-                'tz': self._context.get('tz'),
-                'oauth_uid': record.email if record.email else False,
-                'oauth_provider_id': self.env['auth.oauth.provider'].search([('name', '=', 'Azure AD Single Tenant')], limit=1).id if self.env['auth.oauth.provider'].search([('name', '=', 'Azure AD Single Tenant')], limit=1) else False,
-            })
+            if record.email:
+                user_values_list.append({
+                    'name': record.name,
+                    'partner_id': record.partner_id.id,
+                    'login': record.email if record.email else record.gr_no,
+                    'groups_id': [(6, 0, [user_group.id])] if user_group else [],
+                    'is_student': True,
+                    'tz': self._context.get('tz'),
+                    'oauth_uid': record.email,
+                    'oauth_provider_id': self.env['auth.oauth.provider'].search([('name', '=', 'Azure AD Single Tenant')], limit=1).id if self.env['auth.oauth.provider'].search([('name', '=', 'Azure AD Single Tenant')], limit=1) else False,
+                })
 
                 
         if user_values_list:
             failed = False
             try:
                 # Attempt to create users in bulk
-                new_users = users_res.create(user_values_list)
+                with self.env.cr.savepoint():
+                    new_users = users_res.create(user_values_list)
             except Exception as e:
                 # Log the bulk creation error
                 _logger.error(f"Bulk creation failed for users")
@@ -193,15 +195,28 @@ class OpStudent(models.Model):
                 # Retry creating users one by one
                 for user_values in user_values_list:
                     try:
-                        new_user = users_res.create(user_values)
-                        new_users.append(new_user)
-                        self.env.cr.commit() 
+                        with self.env.cr.savepoint():
+                            # Check if a user with the same `oauth_uid` already exists
+                            existing_user = users_res.search([('oauth_uid', '=', user_values['oauth_uid'])], limit=1)
+                            
+                            # If an existing user is found, unlink (delete) it
+                            if existing_user:
+                                _logger.warning(f"User Alreay Exsist: {user_values}")
+                                new_users.append(existing_user)
+                            else :
+                                # Now create the new user
+                                new_user = users_res.create(user_values)
+                                new_users.append(new_user)
+                
+
+
+              
                     except Exception as individual_error:
                         # Log the error for the individual user
                         _logger.error(f"Failed to create user: {user_values}")
                         _logger.error(f"Error details: {individual_error}")
                         # Continue with the next user, effectively dropping the problematic user
-                        self.env.cr.rollback()
+                        
 
             # Assign the newly created user_ids back to the respective records
             for record, user_id in zip(records_without_user, new_users):
