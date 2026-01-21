@@ -8,8 +8,8 @@
     <t t-name="DashboardOrgInfo">
         <div class="mt8 o_dashboard_org_info"></div>
     </t>
-    <!--Customizable Template -->
     <t t-extend="DashboardOrgInfo">
+         <!--Customizable Template 
          <t t-jquery=".o_dashboard_org_info" t-operation="append">
              <a class="text-*-center inside_a_org_uuid"
                 href="https://www.openeducat.org" target="_blank">
@@ -24,6 +24,6 @@
                          Contact Support</a>
                  </div>
              </a>
-         </t>
+         </t>-->
      </t>
 </templates>
